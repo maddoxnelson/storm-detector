@@ -7,6 +7,30 @@
 var app = require('../app');
 var debug = require('debug')('storm-detector:server');
 var http = require('http');
+const axios = require('axios');
+
+/**
+ * Update our api data every minute
+ */
+let data;
+const updateData = () => {
+  console.log('updating weather data!');
+  axios
+    .get('https://api.weather.gov/alerts/active')
+    .then(res => {
+      data = res.data.features.map(alert => {
+        const { event, headline, description, affectedZones } = alert.properties;
+        return {
+          affectedZones,      
+          event,      
+          headline,      
+          description
+        }
+      });
+    });
+};
+setInterval(updateData, 60000).unref();
+updateData();
 
 /**
  * Get port from environment and store in Express.
@@ -20,6 +44,44 @@ app.set('port', port);
  */
 
 var server = http.createServer(app);
+
+/**
+ * Create a websocket server
+ */
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ server });
+const noop = () => {};
+wss.on('connection', client => {
+  console.log('got a new connection!');
+  client.isAlive = true;
+  client.on('pong', () => client.isAlive = true);
+  client.send(JSON.stringify({ count, data }));
+});
+
+/**
+ * Do a health check every 30 seconds
+ */
+setInterval(() => {
+  wss.clients.forEach(client => {
+    if (client.isAlive === false) return client.terminate();
+    client.isAlive = false;
+    client.ping(noop);
+  });
+}, 10000).unref();
+
+/**
+ * Send a counter update every 5 seconds
+ */
+let count = 0;
+setInterval(() => {
+  ++count;
+  console.log('updating clients!');
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ count, data }));
+    }
+  });
+}, 5000).unref();
 
 /**
  * Listen on provided port, on all network interfaces.
