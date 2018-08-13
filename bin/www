@@ -67,7 +67,7 @@ setInterval(() => {
     client.isAlive = false;
     client.ping(noop);
   });
-}, 10000).unref();
+}, 30000).unref();
 
 /**
  * Send a counter update every 5 seconds
